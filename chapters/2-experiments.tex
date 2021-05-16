@@ -1,0 +1,277 @@
+\hypertarget{experiments}{%
+\chapter{Experiments}\label{chapter:experiments}}
+
+This chapter begins by outlining the relevant details of the existing IPFS
+and Bitswap implementation, as well as the additions made to introduce
+peer-weighting strategies into Bitswap. Then we describe the experimental
+setup used to investigate the game-theoretic consequencies of various Bitswap
+strategies.
+
+\hypertarget{ipfs-implementation}{%
+\subsection{IPFS Implementation}\label{ipfs-implementation}}
+
+Version \texttt{TODO} of \texttt{go-ipfs}, the reference implementation
+of IPFS in Go, was used to run the IPFS protocol. \texttt{go-ipfs} was
+in the alpha phase of its development at the time this research took
+place. As such, the full IPFS protocol was not implemented by the
+version used for this research. This includes Bitswap strategies, which
+were implemented as part of this research effort. The Bitswap strategy
+implementation is detailed in Section
+\protect\hyperlink{strategy-implementation}{Strategy Implementation}.
+\texttt{go-ipfs} was also modified to output additional log information
+relevant to Bitswap ledger updates.
+
+\hypertarget{bitswap-architecture}{%
+\paragraph{Bitswap Architecture}\label{bitswap-architecture}}
+
+\href{}{architecture} shows the flows within the Bitswap submodules. The
+Bitswap API is the interface that the other local IPFS modules use to
+interact with Bitswap, while the Network (\texttt{caps?\ bold?}) is the
+module that peer Bitswap APIs interface with to talk to this Bitswap
+instance. The only Bitswap submodule that this research directly
+modifies the behavior of is the Decision Engine.
+
+\leavevmode\vadjust pre{\hypertarget{architecture}{}}%
+figures/bitswap-architecture.png
+
+Bitswap architecture diagram
+
+\begin{description}
+
+\item[Bitswap Message]
+A Bitswap message contains 1. a set of wantlist updates, which are
+either requests for blocks or cancellations for blocks once request, and
+2. a set of blocks that had been requested by the receiving peer.
+
+\item[Bitswap API]
+The Bitswap API is the interface that the other local IPFS modules use
+to interact with Bitswap. For example, whenever the user requests a file
+that is not in the local IPFS datastore, a request for the file will be
+sent to the Bitswap API.
+
+\item[Want Manager]
+Once a file request has been received by the Bitswap API, it will be
+forwarded to the Want Manager. The Want Manager is responsible for
+keeping our peers updated with the list of blocks that we want. The Want
+Manager sends wantlist updates, which includes both new blocks that we
+want and cancellations for the blocks that we no longer want, to our
+peers.
+
+\item[Peer Message Queues]
+A Peer Message Queue holds the Bitswap messages that we have yet to send
+to our peers. There is one queue per peer. Messages are forwarded from
+these queues to the Network so that they can be sent..
+
+\item[Network]
+The Network is the interface through which our peers' Bitswap instances
+can talk to ours, and vice-versa. This submodule handles the actual
+sending and receiving of Bitswap messages. It is also responsible for
+converting Bitswap messages for peers who are using older Bitswap
+versions.
+
+\item[Decision Engine]
+The Decision Engine is responsible for processing received Bitswap
+messages, maintaining information about peers, and deciding how to
+distribute blocks among peers. For a given message, wantlist updates are
+used to update the sending peer's wantlist while received blocks are
+used to update the sender's ledger. The received blocks are then
+forwarded to the Bitswap API so that they may be added to the local IPFS
+datastore.
+
+For every block we have that is in a peer's wantlist, the Decision
+Engine decides when to forward the block to that peer's message queue
+for sending. According to the IPFS whitepaper, the Decision Engine
+should take into account all peers' ledgers when deciding how much data
+to send to each peer. In the version of \texttt{go-ipfs} at the time of
+this writing, Bitswap ledgers were not used as a proxy for reputation
+when distributing blocks to peers. Support for this feature has been
+added as part of this research.
+\end{description}
+
+\hypertarget{strategy-implementation}{%
+\paragraph{Strategy Implementation}\label{strategy-implementation}}
+
+As mentioned in Section \protect\hyperlink{ipfs-implementation}{IPFS
+Implementation}, the \texttt{go-ipfs} implementation had to be modified
+to supported the features required for this research. In particular, the
+Bitswap submodule had to be updated to implement Bitswap strategies.
+
+\hypertarget{peer-request-queue}{%
+\subparagraph{Peer Request Queue}\label{peer-request-queue}}
+
+The data structure used by the Decision Engine that determines the order
+in which Bitswap sends peers the data they requested is called the
+\emph{peer request queue} (PRQ). Prior to this research, the peer
+request queue used a simple peer ordering function that was meant as a
+placeholder for a complete implementation. The intended implementation
+is outlined in the IPFS whitepaper as one that takes peer reputations,
+and potentially other information, in deciding how to allocate upload
+bandwidth to peers
+(\texttt{cite,\ and\ potentially\ move\ this\ to\ an\ earlier chapter}).
+
+As the purpose of this research was to evaluate potential bandwidth
+allocations based on peer reputations, the peer request queue was
+modified to support weighting strategies based on these reputations.
+The current PRQ implementation used by \texttt{go-ipfs} determines the
+order in which peers are served based on preliminary heuristics.
+The introduction of weights preserves most of the original characteristics
+of the PRQ while providing an interface for serving peers according
+to their relative weights.
+
+\hypertarget{experimental-setup}{%
+\subsection{Experimental Setup}\label{experimental-setup}}
+
+The experiments served to test the game-theoretical model in the actual
+IPFS software. While the game-theoretical model serves to provide insight
+into a form framework of costs and benefits as they relate to bandwidths
+(and, consequently, file download times), actual IPFS software is complex
+enough to warrant a direct experimental analysis to understand the true
+effects of various Bitswap strategies.
+
+To this end, the Testground project [CITE] built by Protocol Labs is used
+as an experimental testbed. Testground provides a flexible framework for
+custom experiments for nodes in a distributed system. Additionally, Protocol
+Labs has written their own set of Bitswap-specific tests in their Beyond
+Bitswap research [CITE]. These tests were used as a jumping off point for
+the custom tests in this research.
+
+One feature of the Beyond Bitswap tests
+is that they allow the user to test nodes running the pure Bitswap protocol,
+which means the nodes don't have to run an entire IPFS node. This is ideal
+for our purposes -- while the influence of the entire Bitswap software is
+necessary to understand the effects of our game-theoretic decisions,
+introducing the entire IPFS stack on top of this would dilute this
+preliminary analysis and is outside the scope of this work.
+
+For this research, the \texttt{go-bitswap} project was updated to support Bitswap
+strategies in a simple, testable way. Each user considers their peers
+who are currently requesting data, and assigns a weight to each of them.
+$R$ bytes are allocated to each peer at the start of each round via the
+Peer Request Queue (PRQ), which is the data structure used to maintain a queue
+of all users we have data to send to. Every time the user sends data
+to/receives data from a peer, the Bitswap ledgers are updated to reflect
+the new history. One the user has distributed the $R$ bytes to its peers
+based on their relative weights, a new round starts and the process repeats.
+
+Additionally, a custom testground test was written to test this behavior. At a
+high-level, each user uploads a unique file to each of its peers in the network --
+so, in a fully connected topology, all users send a file to every other user,
+and receive one as well. We initialize the Bitswap ledgers so that the users
+start with an initial history to weight their peers by, then the ledgers are
+updated over time as data is exchanged between the nodes.
+
+Formally, the test steps are as followed for $N$ users:
+
+\begin{enumerate}
+\item
+    $N$ Docker containers are initialized, and network parameters are set on
+    their respective interfaces. The bandwidth $W$ and latency $L$ values
+    are constraints tuned to create a somewhat realistic testing environment
+    while not compromising the simplicity of the experiment.
+\item
+    The Bitswap nodes are initialized, each with a Bitswap strategy $S_i$ and
+    PRQ round size $R$ (which is the same for all nodes). $S_i$ is the function used
+    to transform the Bitswap ledger for a peer into a weight.
+\item
+    The nodes connect to one another in a \textit{full-mesh topology} -- that is, each node
+    is connected to each other node.
+\item
+    Each node $i$ randomly initializes its Bitswap ledgers for each of its $j$ peers.
+\item
+    Each node $i$ generates a random, unique file of size $F_{ij}$ bytes for $j \in [1, N]$
+    where $j \neq i$ (one file for every other user in the network) and adds the
+    files to its local Bitswap datastore. The \textit{content identifier} $CID_{ij}$ for
+    each file $F_{ij}$ is broadcast over the network, and each node $j$ listens for
+    each $CID_{ij}$ for $i \in [1, N]$ where $i \neq j$.
+\item
+    Each node $i$ generates a random, unique file of size $F_{ij}$ bytes for $j \in [1, N]$
+    where $j \neq i$ (one file for every other user in the network) and adds the
+    files to its local Bitswap datastore. The \textit{content identifier} $CID_{ij}$ for
+    each file $F_{ij}$ is broadcast over the network, and each node $j$ listens for
+    each $CID_{ij}$ for $i \in [1, N]$ where $i \neq j$.
+\item
+    Each user $j$ sends out a request to the network for each $CID_{ij}$ for
+    $i \in [1, N]$ where $i \neq j$.
+\item
+    The users proceed to exchange files as the requests are received.
+\item
+    We measure the time it takes 
+\end{enumerate}.
+
+\hypertarget{experimental-parameters}{%
+\subsection{Experimental Parameters}\label{experimental-parameters}}
+
+The complete list of experimental parameters is:
+
+\begin{itemize}
+\item
+    $B$: the (simulated) bandwidth on the Docker container network interfaces
+\item
+    $L$: the (simulated) latency on the Docker container network interfaces
+\item
+    $R$: the PRQ round size
+\item
+    $S_{i}$ for $i \in [1, N]$: the Bitswap strategy function used by each user
+\item
+    $F_{ij}$ for $j \in [1, N]$ where $j \neq i$: the size of each
+    randomly-generated file sent from user $i$ to user $j$
+\end{itemize}
+
+$B$ and $L$ are used to limit the data transmission rate between the nodes. As the
+Docker containers running these nodes run on the same host machine, the transmission
+rate is very fast when the network interfaces run unimpeded. When data transfer happens
+near-instantaneously, various issues including duplicate block requests can arise.
+$B$ and $L$ are therefore set as constant values to shape the traffic in a more realistic
+way, while retaining the overall simplicity of the experimental setup.
+
+The choice of $R$ has a significant effect on the experiment as well. From a game-theoretic
+perspective, $R$ determines the number of rounds in the repeated game that the users are
+playing. If $R$ is large enough, all users can send all of their files in a single round,
+which would mean only the initial reputations are ever taken into account. If $R$ is small
+enough, the system may behave in strange ways -- for example, if $R$ is comparable to a
+block size, then users would potentially only send a single block per round, rather than
+proportionally waiting the peers and sending some data to throughout in a round. Thus,
+$R$ should be set at least an order of magnitude above the block size (about $262 kB$)
+and, for the purposes of our experiment, a few orders of magnitude below the smallest
+filesize so that a non-trivial number of rounds take place and users' decisions can
+influence how their peers interact with them within the timeframe of the experiment.
+
+The set of Bitswap strategy functions we consider are ($d_{ji}$ is again the debt ratio
+from user $i$ to peer $j$):
+
+\begin{equation}
+    Identity(d_{ji}) = d_{ji}
+\end{equation}
+
+\begin{equation}
+    Sigmoid(d_{ji}, k) = \frac{1}{1 + e^{k (d_{ji} - 1)}}
+\end{equation}
+
+\begin{equation}
+    Constant(d_{ji}) = 1
+\end{equation}
+
+\begin{equation}
+    PayDebts(d_{ji}, \alpha) =
+        \left\{\begin{array}{ll}
+            1 & d_{ji} \leq \alpha \\
+            0 & d_{ji} > \alpha
+        \end{array}
+        \right.
+\end{equation}
+
+\begin{equation}
+    Freeride(d_{ji}) = 0
+\end{equation}
+
+The $Identity$ strategy simply uses the debt ratio directly as the user's weight. In
+a system with long enough history, this function is impractical as it becomes difficult
+to sway the debt ratio in either direction when the numerator + denominator are
+large relatively large. To compensate for this, we also consider the $Sigmoid$ strategy,
+which is quicker to both reward and punish a peer. When using the $Constant$ strategy,
+a user simply allocates bandwidth to all peers, regardless of their debt ratios. A user
+using the $PayDebts$ strategy only allocates bandwidth to a peer has been sufficiently
+neglected, based on the parameter $\alpha$ -- e.g.\ for $\alpha = 0.5$, a user will only
+send to any of their peers who has sent the user $\frac{1}{\alpha} = \frac{1}{0.5} = 2$
+times as much data as the user has sent them. Finally, a user using the $Freeride$ strategy
+never sends data to any peers.
