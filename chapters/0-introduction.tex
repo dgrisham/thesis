@@ -73,3 +73,26 @@ behavior under certain conditions.
 \hypertarget{bittorrent}{%
 \subsubsection{BitTorrent}\label{bittorrent}}
 
+Much work has been done to understand the incentives and gameability of
+the BitTorrent peer-to-peer file sharing protocol. Two research-based
+BitTorrent clients that implement alternative bandwidth sharing strategies,
+BitTyrant and BitThief, demonstrated strategies that disproved the standard
+BitTorrent strategy as a Nash Equilibrium. BitTyrant adjusts the bandwidth
+shared with a peer in order to receive the same share of the peer's bandwidth
+while uploading as little as possible with that peer. BitThief leverages
+Bitswap's optimistic unchoking algorithm to successfully freeride off of the
+network.
+
+PropShare extends these findings by introducing an alternative to the standard
+BitTorrent strategy that corrects for weaknesses presented by BitTyrant and
+BitThief. In BitTorrent, a user ranks their peers in terms of the amount of
+bandwidth those peers have provided to the user, takes the top $N$, and splits
+its bandwidth equally among the $N$ best peers. PropShare ranks the peers similarly,
+but splits bandwidth *proportionally* among the peers based on the relative
+bandwidth allocations given to the user.
+
+IPFS/Bitswap have marked differences from BitTorrent. For instance, a given
+torrent is a static set of file shared among a network of peers that is specific
+to that torrent (called a 'swarm'). In IPFS, on the other hand, data may be added
+to the swarm at any given time, and the average lifespan of a user in a swarm
+will often be much longer than that in a torrent swarm.
